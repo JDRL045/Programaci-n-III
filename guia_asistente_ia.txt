@@ -1,0 +1,182 @@
+
+# Configuración paso a paso para implementar el asistente
+
+## 1. Instalaciones necesarias
+
+### Instalar Python
+Descarga e instala Python desde [python.org](https://www.python.org/downloads/). Asegúrate de seleccionar la opción "Add Python to PATH" durante la instalación.
+
+### Instalar Docker
+Descarga Docker desde [docker.com](https://www.docker.com/).
+
+### Instalar Git
+Descarga Git desde [git-scm.com](https://git-scm.com/).
+
+---
+
+## 2. Configuración del entorno
+
+### Crear el entorno del proyecto
+1. Abre una terminal o consola y crea una carpeta para tu proyecto:
+    ```bash
+    mkdir AsistenteIA
+    cd AsistenteIA
+    ```
+2. Crea un entorno virtual:
+    ```bash
+    python -m venv venv
+    ```
+3. Activa el entorno virtual:
+    - **Windows:**
+      ```bash
+      venv\Scripts\activate
+      ```
+    - **MacOS/Linux:**
+      ```bash
+      source venv/bin/activate
+      ```
+
+4. Instala las dependencias necesarias creando un archivo `requirements.txt` con el siguiente contenido:
+    ```plaintext
+    fastapi
+    uvicorn
+    langchain
+    llama-index
+    sentence-transformers
+    python-telegram-bot
+    ```
+    Luego, instala las dependencias:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+---
+
+## 3. Crear el servidor con FastAPI
+
+1. Crea un archivo llamado `app.py` y añade el siguiente código:
+
+    ```python
+    from fastapi import FastAPI
+    from pydantic import BaseModel
+
+    app = FastAPI()
+
+    class Query(BaseModel):
+        question: str
+
+    @app.post("/query")
+    async def query(data: Query):
+        response = {"answer": f"Procesé tu pregunta: {data.question}"}
+        return response
+
+    @app.get("/")
+    async def root():
+        return {"message": "¡El asistente está funcionando!"}
+    ```
+
+2. Inicia el servidor con el siguiente comando:
+    ```bash
+    uvicorn app:app --reload
+    ```
+3. Accede al servidor en tu navegador en la dirección `http://127.0.0.1:8000`.
+
+---
+
+## 4. Integrar n8n
+
+1. Crea un archivo llamado `docker-compose.yml` con el siguiente contenido:
+    ```yaml
+    version: "3.8"
+    services:
+      asistente:
+        build:
+          context: .
+        ports:
+          - "8000:8000"
+        volumes:
+          - .:/app
+        command: uvicorn app:app --host 0.0.0.0 --port 8000
+
+      n8n:
+        image: n8nio/n8n
+        ports:
+          - "5678:5678"
+        volumes:
+          - ./n8n_data:/home/node/.n8n
+        environment:
+          - N8N_BASIC_AUTH_ACTIVE=true
+          - N8N_BASIC_AUTH_USER=admin
+          - N8N_BASIC_AUTH_PASSWORD=admin
+    ```
+
+2. Levanta los servicios con:
+    ```bash
+    docker-compose up --build
+    ```
+3. Accede a n8n en `http://127.0.0.1:5678` con usuario `admin` y contraseña `admin`.
+
+---
+
+## 5. Crear el bot de Telegram
+
+1. Ve a Telegram y abre el chat con **BotFather**.
+2. Usa el comando `/newbot` y sigue las instrucciones para obtener un token.
+3. Añade el siguiente código a tu archivo `app.py` para integrar Telegram:
+
+    ```python
+    from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+
+    TOKEN = "TU_TOKEN_DE_BOT"
+
+    def start(update, context):
+        update.message.reply_text("¡Hola! Soy tu asistente IA.")
+
+    def responder(update, context):
+        user_input = update.message.text
+        respuesta = f"Procesé tu mensaje: {user_input}"
+        update.message.reply_text(respuesta)
+
+    def iniciar_bot():
+        updater = Updater(TOKEN, use_context=True)
+        dp = updater.dispatcher
+        dp.add_handler(CommandHandler("start", start))
+        dp.add_handler(MessageHandler(Filters.text & ~Filters.command, responder))
+        updater.start_polling()
+
+    if __name__ == "__main__":
+        from threading import Thread
+        bot_thread = Thread(target=iniciar_bot)
+        bot_thread.start()
+        import uvicorn
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+    ```
+
+4. Ejecuta el asistente nuevamente para probar la interacción con el bot.
+
+---
+
+## 6. Desplegar el asistente con Docker
+
+1. Crea un archivo `Dockerfile` con este contenido:
+    ```dockerfile
+    FROM python:3.9
+    WORKDIR /app
+    COPY . /app
+    RUN pip install -r requirements.txt
+    CMD ["python", "app.py"]
+    ```
+2. Construye y ejecuta la imagen:
+    ```bash
+    docker build -t asistente-ia .
+    docker run -p 8000:8000 asistente-ia
+    ```
+
+---
+
+## Finalización
+Con estos pasos tendrás:
+- Un asistente ejecutándose con FastAPI.
+- Flujos automatizados en n8n.
+- Un bot de Telegram funcional.
+- Contenedores Docker para simplificar el despliegue.
